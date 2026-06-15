@@ -8,3 +8,5 @@ work/
 outputs/
 .env
 backend/.env
+
+.vercel
