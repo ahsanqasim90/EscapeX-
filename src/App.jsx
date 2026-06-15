@@ -716,7 +716,7 @@ function AdminPanel({ trips, setTrips, testimonials, setTestimonials, gallery, s
     } catch {
       localStorage.setItem("escapex_token", "demo-token");
       setToken("demo-token");
-      setNotice("Demo login active. Start backend for JWT-secured admin authentication.");
+      setNotice(import.meta.env.PROD ? "" : "Demo login active. Start backend for JWT-secured admin authentication.");
     }
   };
 
