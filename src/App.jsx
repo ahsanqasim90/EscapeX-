@@ -188,6 +188,53 @@ function dateLabel(value) {
   return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(value));
 }
 
+function slugify(value) {
+  return String(value || "trip")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
+
+function readStored(key, fallback) {
+  try {
+    const value = localStorage.getItem(key);
+    return value ? JSON.parse(value) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function blankTrip() {
+  return {
+    id: "",
+    destination: "",
+    location: "",
+    duration: 3,
+    price: 0,
+    coupleCharges: 0,
+    date: new Date().toISOString().slice(0, 10),
+    seats: 20,
+    seatsBooked: 0,
+    pickupCities: ["Islamabad", "Lahore"],
+    cover: "",
+    images: [],
+    videos: [],
+    itinerary: [{ day: 1, title: "", details: "" }],
+    included: [],
+    notIncluded: [],
+    stay: "",
+    terms: {
+      bookingPolicy: "",
+      paymentPolicy: "",
+      cancellationPolicy: "",
+      travelRules: "",
+      safetyGuidelines: "",
+      bring: "",
+    },
+  };
+}
+
 async function api(path, options = {}) {
   const token = localStorage.getItem("escapex_token");
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
@@ -231,17 +278,20 @@ function Button({ children, href, onClick, variant = "primary", icon: Icon = Che
 
 function App() {
   const [page, setPage] = useState(() => window.location.pathname);
-  const [trips, setTrips] = useState(seedTrips);
-  const [testimonials, setTestimonials] = useState(seedTestimonials);
-  const [gallery, setGallery] = useState(media.gallery);
-  const [bookings, setBookings] = useState([]);
+  const [trips, setTrips] = useState(() => readStored("escapex_trips", seedTrips));
+  const [testimonials, setTestimonials] = useState(() => readStored("escapex_testimonials", seedTestimonials));
+  const [gallery, setGallery] = useState(() => readStored("escapex_gallery", media.gallery));
+  const [bookings, setBookings] = useState(() => readStored("escapex_bookings", []));
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     Promise.allSettled([api("/trips"), api("/testimonials"), api("/gallery")]).then(([tripData, testimonialData, galleryData]) => {
-      if (tripData.status === "fulfilled" && tripData.value.length >= seedTrips.length) setTrips(tripData.value);
-      if (testimonialData.status === "fulfilled" && testimonialData.value.length >= seedTestimonials.length) setTestimonials(testimonialData.value);
-      if (galleryData.status === "fulfilled" && galleryData.value.length >= media.gallery.length) setGallery(galleryData.value);
+      const hasStoredTrips = Boolean(localStorage.getItem("escapex_trips"));
+      const hasStoredTestimonials = Boolean(localStorage.getItem("escapex_testimonials"));
+      const hasStoredGallery = Boolean(localStorage.getItem("escapex_gallery"));
+      if (!hasStoredTrips && tripData.status === "fulfilled" && tripData.value.length >= seedTrips.length) setTrips(tripData.value);
+      if (!hasStoredTestimonials && testimonialData.status === "fulfilled" && testimonialData.value.length >= seedTestimonials.length) setTestimonials(testimonialData.value);
+      if (!hasStoredGallery && galleryData.status === "fulfilled" && galleryData.value.length >= media.gallery.length) setGallery(galleryData.value);
     });
   }, []);
 
@@ -699,7 +749,7 @@ function AdminPanel({ trips, setTrips, testimonials, setTestimonials, gallery, s
   const [token, setToken] = useState(localStorage.getItem("escapex_token") || "");
   const [login, setLogin] = useState({ email: "", password: "" });
   const [active, setActive] = useState("dashboard");
-  const [tripDraft, setTripDraft] = useState(seedTrips[0]);
+  const [tripDraft, setTripDraft] = useState(blankTrip());
   const [notice, setNotice] = useState("");
 
   useEffect(() => {
@@ -721,15 +771,34 @@ function AdminPanel({ trips, setTrips, testimonials, setTestimonials, gallery, s
   };
 
   const saveTrip = async () => {
-    const id = tripDraft.id || tripDraft._id || tripDraft.destination.toLowerCase().replaceAll(" ", "-");
-    const next = { ...tripDraft, id };
-    setTrips((items) => [next, ...items.filter((item) => (item.id || item._id) !== id)]);
-    setNotice("Trip saved. Backend API will persist it when connected.");
+    if (!tripDraft.destination.trim()) {
+      setNotice("Please add a destination before saving the trip.");
+      return;
+    }
+    const id = tripDraft._id || slugify(tripDraft.destination);
+    const next = {
+      ...tripDraft,
+      id,
+      cover: tripDraft.cover || tripDraft.images?.[0] || seedTrips[0].cover,
+      images: tripDraft.images?.length ? tripDraft.images : [tripDraft.cover || seedTrips[0].cover],
+      pickupCities: tripDraft.pickupCities?.length ? tripDraft.pickupCities : ["Islamabad", "Lahore"],
+    };
+    setTrips((items) => {
+      const updated = [next, ...items.filter((item) => (item.id || item._id) !== id)];
+      localStorage.setItem("escapex_trips", JSON.stringify(updated));
+      return updated;
+    });
+    setTripDraft(blankTrip());
+    setNotice("Trip saved. Open Home or Trips page to see it.");
     try { await api(`/trips/${id}`, { method: "PUT", body: JSON.stringify(next) }); } catch { /* demo mode */ }
   };
 
   const deleteTrip = (id) => {
-    setTrips((items) => items.filter((item) => (item.id || item._id) !== id));
+    setTrips((items) => {
+      const updated = items.filter((item) => (item.id || item._id) !== id);
+      localStorage.setItem("escapex_trips", JSON.stringify(updated));
+      return updated;
+    });
     api(`/trips/${id}`, { method: "DELETE" }).catch(() => {});
   };
 
@@ -774,8 +843,8 @@ function AdminPanel({ trips, setTrips, testimonials, setTestimonials, gallery, s
           <TripManager trips={trips} tripDraft={tripDraft} setTripDraft={setTripDraft} saveTrip={saveTrip} deleteTrip={deleteTrip} focusTerms={active === "terms"} />
         )}
         {active === "bookings" && <BookingsTable bookings={bookings} updateBookingStatus={updateBookingStatus} />}
-        {active === "testimonials" && <SimpleList title="Testimonials" items={testimonials} setItems={setTestimonials} fields={["name", "location", "text", "rating"]} />}
-        {active === "gallery" && <SimpleList title="Gallery images and videos" items={gallery} setItems={setGallery} fields={["type", "url", "title"]} />}
+        {active === "testimonials" && <SimpleList storageKey="escapex_testimonials" title="Testimonials" items={testimonials} setItems={setTestimonials} fields={["name", "location", "text", "rating"]} />}
+        {active === "gallery" && <SimpleList storageKey="escapex_gallery" title="Gallery images and videos" items={gallery} setItems={setGallery} fields={["type", "url", "title"]} />}
       </div>
     </section>
   );
@@ -804,17 +873,22 @@ function TripManager({ trips, tripDraft, setTripDraft, saveTrip, deleteTrip, foc
   return (
     <div className="grid gap-6 lg:grid-cols-[.9fr_1.1fr]">
       <div className="rounded-lg border border-white/10 bg-white/[0.045] p-5">
-        <h2 className="mb-4 text-2xl font-black">{focusTerms ? "Edit trip Terms & Conditions" : "Add / Edit trip"}</h2>
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h2 className="text-2xl font-black">{focusTerms ? "Edit trip Terms & Conditions" : "Add / Edit trip"}</h2>
+          {!focusTerms && <Button onClick={() => setTripDraft(blankTrip())} variant="ghost" icon={Plus}>New trip</Button>}
+        </div>
         <div className="grid gap-4">
           {!focusTerms && (
             <>
               <Input label="Destination" value={tripDraft.destination} onChange={(value) => set("destination", value)} />
               <Input label="Location" value={tripDraft.location} onChange={(value) => set("location", value)} />
+              <Input label="Cover image URL" value={tripDraft.cover || ""} onChange={(value) => set("cover", value)} />
               <Input label="Per head cost" type="number" value={tripDraft.price} onChange={(value) => set("price", value)} />
               <Input label="Couple charges" type="number" value={tripDraft.coupleCharges} onChange={(value) => set("coupleCharges", value)} />
               <Input label="Date" type="date" value={tripDraft.date} onChange={(value) => set("date", value)} />
               <Input label="Duration days" type="number" value={tripDraft.duration} onChange={(value) => set("duration", value)} />
               <Input label="Seats" type="number" value={tripDraft.seats} onChange={(value) => set("seats", value)} />
+              <Textarea label="Pickup cities, one per line" value={(tripDraft.pickupCities || []).join("\n")} onChange={(value) => setCsv("pickupCities", value)} />
               <Textarea label="Image URLs, one per line" value={(tripDraft.images || []).join("\n")} onChange={(value) => setCsv("images", value)} />
               <Textarea label="Video URLs, one per line" value={(tripDraft.videos || []).join("\n")} onChange={(value) => setCsv("videos", value)} />
               <Textarea label="Included services, one per line" value={(tripDraft.included || []).join("\n")} onChange={(value) => setCsv("included", value)} />
@@ -888,11 +962,13 @@ function BookingsTable({ bookings, updateBookingStatus }) {
   );
 }
 
-function SimpleList({ title, items, setItems, fields }) {
+function SimpleList({ title, items, setItems, fields, storageKey }) {
   const empty = Object.fromEntries(fields.map((field) => [field, field === "rating" ? 5 : ""]));
   const [draft, setDraft] = useState(empty);
   const add = () => {
-    setItems([{ ...draft, id: crypto.randomUUID?.() || Date.now().toString() }, ...items]);
+    const updated = [{ ...draft, id: crypto.randomUUID?.() || Date.now().toString() }, ...items];
+    setItems(updated);
+    if (storageKey) localStorage.setItem(storageKey, JSON.stringify(updated));
     setDraft(empty);
   };
   return (
@@ -911,7 +987,11 @@ function SimpleList({ title, items, setItems, fields }) {
               <p className="font-black">{item.title || item.name || item.url}</p>
               <p className="line-clamp-2 text-sm text-white/56">{item.text || item.url || item.location}</p>
             </div>
-            <button type="button" onClick={() => setItems(items.filter((candidate) => candidate !== item))} className="grid h-10 w-10 place-items-center rounded-md bg-red-500/15 text-red-200"><Trash2 className="h-4 w-4" /></button>
+            <button type="button" onClick={() => {
+              const updated = items.filter((candidate) => candidate !== item);
+              setItems(updated);
+              if (storageKey) localStorage.setItem(storageKey, JSON.stringify(updated));
+            }} className="grid h-10 w-10 place-items-center rounded-md bg-red-500/15 text-red-200"><Trash2 className="h-4 w-4" /></button>
           </div>
         ))}
       </div>
