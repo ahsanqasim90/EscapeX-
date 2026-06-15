@@ -607,11 +607,11 @@ function BookingForm({ trip }) {
   );
 }
 
-function Input({ label, value, onChange, type = "text", required = false, min }) {
+function Input({ label, value, onChange, type = "text", required = false, min, autoComplete, name }) {
   return (
     <label className="grid gap-2 text-sm font-bold text-white/72">
       {label}
-      <input type={type} min={min} required={required} value={value} onChange={(event) => onChange(event.target.value)} className="h-11 rounded-md border border-white/10 bg-black/35 px-3 text-white outline-none focus:border-sun" />
+      <input name={name} autoComplete={autoComplete} type={type} min={min} required={required} value={value} onChange={(event) => onChange(event.target.value)} className="h-11 rounded-md border border-white/10 bg-black/35 px-3 text-white outline-none focus:border-sun" />
     </label>
   );
 }
@@ -697,7 +697,7 @@ function Footer({ navigate }) {
 
 function AdminPanel({ trips, setTrips, testimonials, setTestimonials, gallery, setGallery, bookings, setBookings, navigate }) {
   const [token, setToken] = useState(localStorage.getItem("escapex_token") || "");
-  const [login, setLogin] = useState({ email: "admin@escapex.pk", password: "admin12345" });
+  const [login, setLogin] = useState({ email: "", password: "" });
   const [active, setActive] = useState("dashboard");
   const [tripDraft, setTripDraft] = useState(seedTrips[0]);
   const [notice, setNotice] = useState("");
@@ -740,12 +740,14 @@ function AdminPanel({ trips, setTrips, testimonials, setTestimonials, gallery, s
   if (!token) {
     return (
       <section className="grid min-h-screen place-items-center bg-[url('https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?auto=format&fit=crop&w=1800&q=85')] bg-cover bg-center px-4">
-        <form onSubmit={doLogin} className="w-full max-w-md rounded-lg border border-white/10 bg-black/75 p-6 backdrop-blur">
+        <form onSubmit={doLogin} autoComplete="off" className="w-full max-w-md rounded-lg border border-white/10 bg-black/75 p-6 backdrop-blur">
           <Logo />
           <h1 className="mt-8 text-3xl font-black">Secure admin login</h1>
           <div className="mt-6 grid gap-4">
-            <Input label="Email" type="email" value={login.email} onChange={(email) => setLogin({ ...login, email })} required />
-            <Input label="Password" type="password" value={login.password} onChange={(password) => setLogin({ ...login, password })} required />
+            <input className="hidden" type="text" name="fake-username" autoComplete="username" tabIndex="-1" aria-hidden="true" />
+            <input className="hidden" type="password" name="fake-password" autoComplete="current-password" tabIndex="-1" aria-hidden="true" />
+            <Input label="Email" name="escapex-admin-email" autoComplete="off" type="email" value={login.email} onChange={(email) => setLogin({ ...login, email })} required />
+            <Input label="Password" name="escapex-admin-passcode" autoComplete="new-password" type="password" value={login.password} onChange={(password) => setLogin({ ...login, password })} required />
             <Button type="submit" icon={ShieldCheck}>Login</Button>
           </div>
         </form>
