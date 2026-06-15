@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 
 const apiBase = import.meta.env.VITE_API_URL || "http://127.0.0.1:4000/api";
+const logoUrl = "/brand/escapex-logo.png";
 const contact = {
   whatsappDisplay: "0324 4378226",
   whatsappUrl: "https://wa.me/923244378226",
@@ -197,8 +198,8 @@ async function api(path, options = {}) {
 function Logo() {
   return (
     <span className="flex items-center gap-3">
-      <span className="grid h-10 w-10 place-items-center rounded-md bg-sun text-forest shadow-sun">
-        <Mountain className="h-6 w-6" aria-hidden="true" />
+      <span className="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-full bg-black ring-1 ring-sun/40 shadow-sun">
+        <img src={logoUrl} alt="EscapeX logo" className="h-full w-full object-cover" />
       </span>
       <span className="leading-none">
         <span className="block text-lg font-black tracking-wide text-white">EscapeX</span>
@@ -371,8 +372,12 @@ function Hero({ navigate }) {
       <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(0,0,0,.9),rgba(3,40,28,.62),rgba(0,0,0,.25)),linear-gradient(0deg,rgba(0,0,0,.9),transparent_55%)]" />
       <div className="relative mx-auto flex min-h-[calc(640px-4rem)] max-w-7xl items-center px-4 py-12 sm:min-h-[calc(700px-4rem)] sm:px-6 lg:min-h-[calc(760px-4rem)] lg:px-8 xl:min-h-[calc(820px-4rem)]">
         <div className="max-w-3xl text-left drop-shadow-[0_4px_24px_rgba(0,0,0,0.85)]">
-          <div className="mb-7 inline-flex items-center gap-3 rounded-md border border-white/15 bg-white/10 px-4 py-3 backdrop-blur">
-            <Logo />
+          <div className="mb-7 inline-flex items-center gap-4 rounded-md border border-white/15 bg-black/35 px-4 py-3 backdrop-blur">
+            <img src={logoUrl} alt="EscapeX" className="h-16 w-16 rounded-full object-cover ring-2 ring-sun/60 sm:h-20 sm:w-20" />
+            <div>
+              <p className="text-xl font-black leading-none text-white sm:text-2xl">EscapeX</p>
+              <p className="mt-1 text-xs font-bold uppercase tracking-[0.22em] text-sun">Escape the Ordinary</p>
+            </div>
           </div>
           <p className="text-xs font-black uppercase tracking-[0.28em] text-sun sm:text-sm">Pakistan tourism | mountains | forests | lakes</p>
           <h1 className="mt-5 max-w-4xl text-5xl font-black leading-[0.98] text-white sm:text-6xl lg:text-7xl xl:text-8xl">Escape the Ordinary</h1>
