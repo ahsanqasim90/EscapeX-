@@ -382,7 +382,7 @@ app.post("/api/uploads", requireAdmin, upload.array("media", 12), (request, resp
   response.status(201).json(files);
 });
 
-async function start() {
+async function connectDatabase() {
   try {
     if (process.env.MONGODB_URI) {
       await mongoose.connect(process.env.MONGODB_URI);
@@ -391,11 +391,15 @@ async function start() {
     } else {
       console.log("MONGODB_URI not set; using in-memory demo data");
     }
-    app.listen(port, () => console.log(`EscapeX API running on http://127.0.0.1:${port}`));
   } catch (error) {
-    console.error("Failed to start EscapeX API", error);
-    process.exit(1);
+    console.error("Failed to connect MongoDB; using in-memory demo data", error);
   }
 }
 
-start();
+connectDatabase();
+
+if (!process.env.VERCEL) {
+  app.listen(port, () => console.log(`EscapeX API running on http://127.0.0.1:${port}`));
+}
+
+export default app;
