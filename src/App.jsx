@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   BadgeCheck,
   CalendarDays,
   Camera,
   CheckCircle2,
+  ChevronLeft,
   ChevronRight,
   Clock3,
   Edit3,
@@ -29,7 +30,7 @@ import {
 
 const apiBase =
   import.meta.env.VITE_API_URL ||
-  (import.meta.env.PROD ? "/_/backend/api" : "http://127.0.0.1:4000/api");
+  (import.meta.env.PROD ? "/api" : "http://127.0.0.1:4000/api");
 const logoUrl = "/brand/escapex-logo.png";
 const contact = {
   whatsappDisplay: "0324 4378226",
@@ -205,6 +206,15 @@ function readStored(key, fallback) {
   }
 }
 
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 function blankTrip() {
   return {
     id: "",
@@ -286,12 +296,27 @@ function App() {
 
   useEffect(() => {
     Promise.allSettled([api("/trips"), api("/testimonials"), api("/gallery")]).then(([tripData, testimonialData, galleryData]) => {
-      const hasStoredTrips = Boolean(localStorage.getItem("escapex_trips"));
-      const hasStoredTestimonials = Boolean(localStorage.getItem("escapex_testimonials"));
-      const hasStoredGallery = Boolean(localStorage.getItem("escapex_gallery"));
-      if (!hasStoredTrips && tripData.status === "fulfilled" && tripData.value.length >= seedTrips.length) setTrips(tripData.value);
-      if (!hasStoredTestimonials && testimonialData.status === "fulfilled" && testimonialData.value.length >= seedTestimonials.length) setTestimonials(testimonialData.value);
-      if (!hasStoredGallery && galleryData.status === "fulfilled" && galleryData.value.length >= media.gallery.length) setGallery(galleryData.value);
+      if (tripData.status === "fulfilled" && tripData.value.length >= seedTrips.length) {
+        setTrips((items) => {
+          if (tripData.value.length < items.length) return items;
+          localStorage.setItem("escapex_trips", JSON.stringify(tripData.value));
+          return tripData.value;
+        });
+      }
+      if (testimonialData.status === "fulfilled" && testimonialData.value.length >= seedTestimonials.length) {
+        setTestimonials((items) => {
+          if (testimonialData.value.length < items.length) return items;
+          localStorage.setItem("escapex_testimonials", JSON.stringify(testimonialData.value));
+          return testimonialData.value;
+        });
+      }
+      if (galleryData.status === "fulfilled" && galleryData.value.length >= media.gallery.length) {
+        setGallery((items) => {
+          if (galleryData.value.length < items.length) return items;
+          localStorage.setItem("escapex_gallery", JSON.stringify(galleryData.value));
+          return galleryData.value;
+        });
+      }
     });
   }, []);
 
@@ -380,13 +405,34 @@ function Nav({ navigate, menuOpen, setMenuOpen }) {
 }
 
 function Home({ trips, testimonials, gallery, navigate }) {
+  const tripRailRef = useRef(null);
+  const shiftTrips = (direction) => {
+    const rail = tripRailRef.current;
+    if (!rail) return;
+    rail.scrollBy({ left: direction * Math.min(rail.clientWidth, 920), behavior: "smooth" });
+  };
+
   return (
     <>
       <Hero navigate={navigate} />
       <section id="trips" className="mx-auto max-w-7xl px-4 py-12 sm:px-6 sm:py-16 lg:px-8 lg:py-20">
-        <SectionTitle eyebrow="Upcoming Trips" title="Northern Pakistan adventures ready for booking" />
-        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-          {trips.slice(0, 3).map((trip) => <TripCard key={trip.id || trip._id} trip={trip} navigate={navigate} />)}
+        <div className="mb-10 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+          <SectionTitle eyebrow="Upcoming Trips" title="Northern Pakistan adventures ready for booking" className="mb-0" />
+          <div className="flex gap-2">
+            <button type="button" onClick={() => shiftTrips(-1)} className="grid h-11 w-11 place-items-center rounded-md border border-white/15 bg-white/8 text-white transition hover:border-sun hover:text-sun" aria-label="Previous trips">
+              <ChevronLeft className="h-5 w-5" aria-hidden="true" />
+            </button>
+            <button type="button" onClick={() => shiftTrips(1)} className="grid h-11 w-11 place-items-center rounded-md bg-sun text-forest transition hover:bg-white" aria-label="Next trips">
+              <ChevronRight className="h-5 w-5" aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+        <div ref={tripRailRef} className="-mx-4 flex snap-x gap-5 overflow-x-auto px-4 pb-4 [scrollbar-width:none] sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 [&::-webkit-scrollbar]:hidden">
+          {trips.map((trip) => (
+            <div key={trip.id || trip._id} className="w-[86vw] shrink-0 snap-start sm:w-[420px] lg:w-[390px] xl:w-[400px]">
+              <TripCard trip={trip} navigate={navigate} />
+            </div>
+          ))}
         </div>
       </section>
       <section className="bg-white/[0.035] py-12 sm:py-16 lg:py-20">
@@ -444,9 +490,9 @@ function Hero({ navigate }) {
   );
 }
 
-function SectionTitle({ eyebrow, title }) {
+function SectionTitle({ eyebrow, title, className = "mb-10" }) {
   return (
-    <div className="mb-10 max-w-4xl">
+    <div className={`${className} max-w-4xl`}>
       <p className="text-sm font-black uppercase tracking-[0.28em] text-sun">{eyebrow}</p>
       <h2 className="mt-3 text-3xl font-black leading-tight text-white sm:text-4xl lg:text-5xl">{title}</h2>
     </div>
@@ -870,6 +916,18 @@ function TripManager({ trips, tripDraft, setTripDraft, saveTrip, deleteTrip, foc
   const set = (key, value) => setTripDraft({ ...tripDraft, [key]: value });
   const setCsv = (key, value) => set(key, value.split("\n").filter(Boolean));
   const setTerms = (key, value) => setTripDraft({ ...tripDraft, terms: { ...(tripDraft.terms || {}), [key]: value } });
+  const uploadImages = async (files) => {
+    const selected = Array.from(files || []).filter((file) => file.type.startsWith("image/"));
+    if (!selected.length) return;
+    const encoded = await Promise.all(selected.map(readFileAsDataUrl));
+    const images = [...(tripDraft.images || []), ...encoded];
+    setTripDraft({ ...tripDraft, images, cover: tripDraft.cover || encoded[0] });
+  };
+  const removeImage = (image) => {
+    const images = (tripDraft.images || []).filter((item) => item !== image);
+    setTripDraft({ ...tripDraft, images, cover: tripDraft.cover === image ? images[0] || "" : tripDraft.cover });
+  };
+
   return (
     <div className="grid gap-6 lg:grid-cols-[.9fr_1.1fr]">
       <div className="rounded-lg border border-white/10 bg-white/[0.045] p-5">
@@ -882,14 +940,13 @@ function TripManager({ trips, tripDraft, setTripDraft, saveTrip, deleteTrip, foc
             <>
               <Input label="Destination" value={tripDraft.destination} onChange={(value) => set("destination", value)} />
               <Input label="Location" value={tripDraft.location} onChange={(value) => set("location", value)} />
-              <Input label="Cover image URL" value={tripDraft.cover || ""} onChange={(value) => set("cover", value)} />
+              <ImageUploader images={tripDraft.images || []} cover={tripDraft.cover} onUpload={uploadImages} onCover={(cover) => set("cover", cover)} onRemove={removeImage} />
               <Input label="Per head cost" type="number" value={tripDraft.price} onChange={(value) => set("price", value)} />
               <Input label="Couple charges" type="number" value={tripDraft.coupleCharges} onChange={(value) => set("coupleCharges", value)} />
               <Input label="Date" type="date" value={tripDraft.date} onChange={(value) => set("date", value)} />
               <Input label="Duration days" type="number" value={tripDraft.duration} onChange={(value) => set("duration", value)} />
               <Input label="Seats" type="number" value={tripDraft.seats} onChange={(value) => set("seats", value)} />
               <Textarea label="Pickup cities, one per line" value={(tripDraft.pickupCities || []).join("\n")} onChange={(value) => setCsv("pickupCities", value)} />
-              <Textarea label="Image URLs, one per line" value={(tripDraft.images || []).join("\n")} onChange={(value) => setCsv("images", value)} />
               <Textarea label="Video URLs, one per line" value={(tripDraft.videos || []).join("\n")} onChange={(value) => setCsv("videos", value)} />
               <Textarea label="Included services, one per line" value={(tripDraft.included || []).join("\n")} onChange={(value) => setCsv("included", value)} />
               <Textarea label="Not included services, one per line" value={(tripDraft.notIncluded || []).join("\n")} onChange={(value) => setCsv("notIncluded", value)} />
@@ -920,6 +977,37 @@ function TripManager({ trips, tripDraft, setTripDraft, saveTrip, deleteTrip, foc
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function ImageUploader({ images, cover, onUpload, onCover, onRemove }) {
+  return (
+    <div className="grid gap-3">
+      <span className="text-sm font-bold text-white/72">Trip images</span>
+      <label className="flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-sun/45 bg-black/30 px-4 py-6 text-center transition hover:border-sun hover:bg-sun/10">
+        <ImagePlus className="h-8 w-8 text-sun" aria-hidden="true" />
+        <span className="mt-3 font-black text-white">Upload images from device</span>
+        <span className="mt-1 text-sm text-white/55">First uploaded image becomes the cover. You can change it below.</span>
+        <input type="file" accept="image/*" multiple className="sr-only" onChange={(event) => onUpload(event.target.files)} />
+      </label>
+      {images.length > 0 && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {images.map((image, index) => (
+            <div key={`${image.slice(0, 36)}-${index}`} className="overflow-hidden rounded-lg border border-white/10 bg-black/25">
+              <img src={image} alt={`Trip upload ${index + 1}`} className="aspect-video w-full object-cover" />
+              <div className="flex items-center justify-between gap-2 p-3">
+                <button type="button" onClick={() => onCover(image)} className={`rounded-md px-3 py-2 text-xs font-black ${cover === image ? "bg-sun text-forest" : "bg-white/10 text-white hover:text-sun"}`}>
+                  {cover === image ? "Cover image" : "Set cover"}
+                </button>
+                <button type="button" onClick={() => onRemove(image)} className="rounded-md bg-red-500/15 px-3 py-2 text-xs font-black text-red-200">
+                  Remove
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
