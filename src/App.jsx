@@ -186,7 +186,13 @@ function money(value) {
 }
 
 function dateLabel(value) {
-  return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(value));
+  try {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "Date TBA";
+    return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(date);
+  } catch {
+    return "Date TBA";
+  }
 }
 
 function slugify(value) {
@@ -200,16 +206,56 @@ function slugify(value) {
 function readStored(key, fallback) {
   try {
     const value = localStorage.getItem(key);
-    return value ? JSON.parse(value) : fallback;
+    const parsed = value ? JSON.parse(value) : fallback;
+    if (key === "escapex_trips") return sanitizeTrips(parsed, fallback);
+    return parsed;
   } catch {
+    localStorage.removeItem(key);
     return fallback;
   }
 }
 
-function readFileAsDataUrl(file) {
+function safeStorageSet(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function sanitizeTrips(trips, fallback = seedTrips) {
+  if (!Array.isArray(trips)) return fallback;
+  return trips.map((trip) => {
+    const cleanImages = (trip.images || []).filter((image) => !String(image).startsWith("data:image/") || String(image).length < 900000);
+    const cleanCover = String(trip.cover || "").startsWith("data:image/") && String(trip.cover).length >= 900000 ? cleanImages[0] : trip.cover;
+    return {
+      ...trip,
+      cover: cleanCover || cleanImages[0] || fallback[0].cover,
+      images: cleanImages.length ? cleanImages : [cleanCover || fallback[0].cover],
+    };
+  });
+}
+
+function imageToCompressedDataUrl(file, maxSize = 1400, quality = 0.78) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
+    reader.onload = () => {
+      const image = new Image();
+      image.onload = () => {
+        const scale = Math.min(1, maxSize / Math.max(image.width, image.height));
+        const width = Math.max(1, Math.round(image.width * scale));
+        const height = Math.max(1, Math.round(image.height * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext("2d");
+        context.drawImage(image, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      image.onerror = reject;
+      image.src = reader.result;
+    };
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
@@ -299,21 +345,21 @@ function App() {
       if (tripData.status === "fulfilled" && tripData.value.length >= seedTrips.length) {
         setTrips((items) => {
           if (tripData.value.length < items.length) return items;
-          localStorage.setItem("escapex_trips", JSON.stringify(tripData.value));
+          safeStorageSet("escapex_trips", tripData.value);
           return tripData.value;
         });
       }
       if (testimonialData.status === "fulfilled" && testimonialData.value.length >= seedTestimonials.length) {
         setTestimonials((items) => {
           if (testimonialData.value.length < items.length) return items;
-          localStorage.setItem("escapex_testimonials", JSON.stringify(testimonialData.value));
+          safeStorageSet("escapex_testimonials", testimonialData.value);
           return testimonialData.value;
         });
       }
       if (galleryData.status === "fulfilled" && galleryData.value.length >= media.gallery.length) {
         setGallery((items) => {
           if (galleryData.value.length < items.length) return items;
-          localStorage.setItem("escapex_gallery", JSON.stringify(galleryData.value));
+          safeStorageSet("escapex_gallery", galleryData.value);
           return galleryData.value;
         });
       }
@@ -673,7 +719,7 @@ function BookingForm({ trip }) {
       setForm({ ...form, name: "", phone: "", email: "", cnic: "", request: "", seats: 1, agreed: false });
     } catch {
       const local = JSON.parse(localStorage.getItem("escapex_bookings") || "[]");
-      localStorage.setItem("escapex_bookings", JSON.stringify([{ ...payload, status: "pending", createdAt: new Date().toISOString() }, ...local]));
+      safeStorageSet("escapex_bookings", [{ ...payload, status: "pending", createdAt: new Date().toISOString() }, ...local]);
       setStatus("Booking saved locally for demo. Connect backend to submit directly to admin panel.");
     }
   };
@@ -829,20 +875,23 @@ function AdminPanel({ trips, setTrips, testimonials, setTestimonials, gallery, s
       images: tripDraft.images?.length ? tripDraft.images : [tripDraft.cover || seedTrips[0].cover],
       pickupCities: tripDraft.pickupCities?.length ? tripDraft.pickupCities : ["Islamabad", "Lahore"],
     };
+    let storedLocally = true;
     setTrips((items) => {
       const updated = [next, ...items.filter((item) => (item.id || item._id) !== id)];
-      localStorage.setItem("escapex_trips", JSON.stringify(updated));
+      if (!safeStorageSet("escapex_trips", updated)) {
+        storedLocally = false;
+      }
       return updated;
     });
     setTripDraft(blankTrip());
-    setNotice("Trip saved. Open Home or Trips page to see it.");
+    setNotice(storedLocally ? "Trip saved. Open Home or Trips page to see it." : "Trip saved on screen, but browser storage was full. Use smaller images or connect MongoDB for permanent storage.");
     try { await api(`/trips/${id}`, { method: "PUT", body: JSON.stringify(next) }); } catch { /* demo mode */ }
   };
 
   const deleteTrip = (id) => {
     setTrips((items) => {
       const updated = items.filter((item) => (item.id || item._id) !== id);
-      localStorage.setItem("escapex_trips", JSON.stringify(updated));
+      safeStorageSet("escapex_trips", updated);
       return updated;
     });
     api(`/trips/${id}`, { method: "DELETE" }).catch(() => {});
@@ -879,7 +928,10 @@ function AdminPanel({ trips, setTrips, testimonials, setTestimonials, gallery, s
           <div className="flex gap-2 overflow-x-auto">
             {tabs.map((tab) => <button key={tab} type="button" onClick={() => setActive(tab)} className={`rounded-md px-3 py-2 text-sm font-black capitalize ${active === tab ? "bg-sun text-forest" : "bg-white/8 text-white/70"}`}>{tab}</button>)}
           </div>
-          <Button variant="ghost" icon={LogOut} onClick={() => { localStorage.removeItem("escapex_token"); setToken(""); navigate("/"); }}>Logout</Button>
+          <div className="flex gap-2">
+            <Button variant="ghost" icon={Trash2} onClick={() => { localStorage.removeItem("escapex_trips"); setTrips(seedTrips); setNotice("Local trip cache cleared. Refresh if the browser was stuck after a large upload."); }}>Clear cache</Button>
+            <Button variant="ghost" icon={LogOut} onClick={() => { localStorage.removeItem("escapex_token"); setToken(""); navigate("/"); }}>Logout</Button>
+          </div>
         </div>
       </header>
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -917,9 +969,10 @@ function TripManager({ trips, tripDraft, setTripDraft, saveTrip, deleteTrip, foc
   const setCsv = (key, value) => set(key, value.split("\n").filter(Boolean));
   const setTerms = (key, value) => setTripDraft({ ...tripDraft, terms: { ...(tripDraft.terms || {}), [key]: value } });
   const uploadImages = async (files) => {
-    const selected = Array.from(files || []).filter((file) => file.type.startsWith("image/"));
+    const remainingSlots = Math.max(0, 5 - (tripDraft.images || []).length);
+    const selected = Array.from(files || []).filter((file) => file.type.startsWith("image/")).slice(0, remainingSlots);
     if (!selected.length) return;
-    const encoded = await Promise.all(selected.map(readFileAsDataUrl));
+    const encoded = await Promise.all(selected.map((file) => imageToCompressedDataUrl(file)));
     const images = [...(tripDraft.images || []), ...encoded];
     setTripDraft({ ...tripDraft, images, cover: tripDraft.cover || encoded[0] });
   };
@@ -957,7 +1010,7 @@ function TripManager({ trips, tripDraft, setTripDraft, saveTrip, deleteTrip, foc
             <Textarea key={key} label={key.replace(/([A-Z])/g, " $1")} value={tripDraft.terms?.[key] || ""} onChange={(value) => setTerms(key, value)} />
           ))}
           <Button onClick={saveTrip} icon={Plus}>Save trip</Button>
-          <p className="text-sm text-white/50"><ImagePlus className="mr-2 inline h-4 w-4 text-sun" />Cloudinary/local upload endpoints are included in the backend; paste URLs here in demo mode.</p>
+          <p className="text-sm text-white/50"><ImagePlus className="mr-2 inline h-4 w-4 text-sun" />Images are compressed automatically before saving. Use up to 5 trip images for best performance.</p>
         </div>
       </div>
       <div className="space-y-3">
@@ -988,7 +1041,7 @@ function ImageUploader({ images, cover, onUpload, onCover, onRemove }) {
       <label className="flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-sun/45 bg-black/30 px-4 py-6 text-center transition hover:border-sun hover:bg-sun/10">
         <ImagePlus className="h-8 w-8 text-sun" aria-hidden="true" />
         <span className="mt-3 font-black text-white">Upload images from device</span>
-        <span className="mt-1 text-sm text-white/55">First uploaded image becomes the cover. You can change it below.</span>
+        <span className="mt-1 text-sm text-white/55">First uploaded image becomes the cover. Images are compressed for the website.</span>
         <input type="file" accept="image/*" multiple className="sr-only" onChange={(event) => onUpload(event.target.files)} />
       </label>
       {images.length > 0 && (
@@ -1056,7 +1109,7 @@ function SimpleList({ title, items, setItems, fields, storageKey }) {
   const add = () => {
     const updated = [{ ...draft, id: crypto.randomUUID?.() || Date.now().toString() }, ...items];
     setItems(updated);
-    if (storageKey) localStorage.setItem(storageKey, JSON.stringify(updated));
+    if (storageKey) safeStorageSet(storageKey, updated);
     setDraft(empty);
   };
   return (
@@ -1078,7 +1131,7 @@ function SimpleList({ title, items, setItems, fields, storageKey }) {
             <button type="button" onClick={() => {
               const updated = items.filter((candidate) => candidate !== item);
               setItems(updated);
-              if (storageKey) localStorage.setItem(storageKey, JSON.stringify(updated));
+              if (storageKey) safeStorageSet(storageKey, updated);
             }} className="grid h-10 w-10 place-items-center rounded-md bg-red-500/15 text-red-200"><Trash2 className="h-4 w-4" /></button>
           </div>
         ))}
