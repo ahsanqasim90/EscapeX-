@@ -251,6 +251,11 @@ export function AdminDashboard() {
                 {videoEmbed?.type === "video" ? (
                   <video src={videoEmbed.src} controls className="mt-4 aspect-video w-full rounded-md border border-white/10 bg-black object-contain" />
                 ) : null}
+                {videoEmbed?.type === "link" ? (
+                  <a href={videoEmbed.src} target="_blank" rel="noreferrer" className="mt-4 inline-flex rounded-full border border-cyan/30 px-4 py-2 text-sm font-bold text-cyan transition hover:bg-cyan hover:text-ink">
+                    Open video link
+                  </a>
+                ) : null}
                 {item.thumbnailUrl ? <img src={item.thumbnailUrl} alt="" className="mt-4 h-32 rounded-md object-cover" /> : null}
                 <button
                   onClick={() => setContent((current) => ({ ...current, portfolioItems: current.portfolioItems.filter((_, itemIndex) => itemIndex !== index) }))}
